@@ -9,6 +9,7 @@
 #include "src/heap/base/worklist.h"
 #include "src/heap/evacuation-allocator.h"
 #include "src/heap/index-generator.h"
+#include "src/heap/memory-chunk.h"
 #include "src/heap/objects-visiting.h"
 #include "src/heap/parallel-work-item.h"
 #include "src/heap/slot-set.h"
@@ -128,6 +129,11 @@ class Scavenger {
   template <typename TSlot>
   inline SlotCallbackResult CheckAndScavengeObject(Heap* heap, TSlot slot);
 
+  template <typename TSlot>
+  inline void CheckOldToNewSlotForSharedUntyped(MemoryChunk* chunk, TSlot slot);
+  inline void CheckOldToNewSlotForSharedTyped(MemoryChunk* chunk,
+                                              SlotType slot_type, Address slot);
+
   // Scavenges an object |object| referenced from slot |p|. |object| is required
   // to be in from space.
   template <typename THeapObjectSlot>
@@ -206,6 +212,7 @@ class Scavenger {
   const bool is_compacting_;
   const bool is_compacting_including_map_space_;
   const bool shared_string_table_;
+  const bool mark_shared_heap_;
 
   friend class IterateAndScavengePromotedObjectsVisitor;
   friend class RootScavengeVisitor;

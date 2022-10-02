@@ -101,11 +101,20 @@ class ScopeIterator {
 
   bool InInnerScope() const { return !function_.is_null(); }
   bool HasContext() const;
-  bool NeedsAndHasContext() const;
+  bool NeedsContext() const;
   Handle<Context> CurrentContext() const {
     DCHECK(HasContext());
     return context_;
   }
+
+  bool IsAtClosureScope() const;
+  // Calculates all the block list starting at the current scope and stores
+  // them in the global "LocalsBlocklistCache".
+  //
+  // Can only be called when `IsAtClosureScope` is true. At that point we have
+  // advanced to the right parsed scope as well as found the correct
+  // corresponding context.
+  void CollectAndStoreLocalBlocklists() const;
 
  private:
   Isolate* isolate_;
@@ -130,12 +139,13 @@ class ScopeIterator {
     return frame_inspector_->javascript_frame();
   }
 
-  void AdvanceOneScope();
-  void AdvanceToNonHiddenScope();
+  bool AdvanceOneScope();
+  void AdvanceOneContext();
+  void AdvanceScope();
   void AdvanceContext();
   void CollectLocalsFromCurrentScope();
 
-  int GetSourcePosition();
+  int GetSourcePosition() const;
 
   void TryParseAndRetrieveScopes(ReparseStrategy strategy);
 

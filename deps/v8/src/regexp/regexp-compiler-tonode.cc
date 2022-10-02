@@ -150,16 +150,16 @@ void UnicodeRangeSplitter::AddRange(CharacterRange range) {
   static constexpr base::uc32 kBmp2End = kNonBmpStart - 1;
 
   // Ends are all inclusive.
-  STATIC_ASSERT(kBmp1Start == 0);
-  STATIC_ASSERT(kBmp1Start < kBmp1End);
-  STATIC_ASSERT(kBmp1End + 1 == kLeadSurrogateStart);
-  STATIC_ASSERT(kLeadSurrogateStart < kLeadSurrogateEnd);
-  STATIC_ASSERT(kLeadSurrogateEnd + 1 == kTrailSurrogateStart);
-  STATIC_ASSERT(kTrailSurrogateStart < kTrailSurrogateEnd);
-  STATIC_ASSERT(kTrailSurrogateEnd + 1 == kBmp2Start);
-  STATIC_ASSERT(kBmp2Start < kBmp2End);
-  STATIC_ASSERT(kBmp2End + 1 == kNonBmpStart);
-  STATIC_ASSERT(kNonBmpStart < kNonBmpEnd);
+  static_assert(kBmp1Start == 0);
+  static_assert(kBmp1Start < kBmp1End);
+  static_assert(kBmp1End + 1 == kLeadSurrogateStart);
+  static_assert(kLeadSurrogateStart < kLeadSurrogateEnd);
+  static_assert(kLeadSurrogateEnd + 1 == kTrailSurrogateStart);
+  static_assert(kTrailSurrogateStart < kTrailSurrogateEnd);
+  static_assert(kTrailSurrogateEnd + 1 == kBmp2Start);
+  static_assert(kBmp2Start < kBmp2End);
+  static_assert(kBmp2End + 1 == kNonBmpStart);
+  static_assert(kNonBmpStart < kNonBmpEnd);
 
   static constexpr base::uc32 kStarts[] = {
       kBmp1Start, kLeadSurrogateStart, kTrailSurrogateStart,
@@ -175,8 +175,8 @@ void UnicodeRangeSplitter::AddRange(CharacterRange range) {
   };
 
   static constexpr int kCount = arraysize(kStarts);
-  STATIC_ASSERT(kCount == arraysize(kEnds));
-  STATIC_ASSERT(kCount == arraysize(kTargets));
+  static_assert(kCount == arraysize(kEnds));
+  static_assert(kCount == arraysize(kTargets));
 
   for (int i = 0; i < kCount; i++) {
     if (kStarts[i] > range.to()) break;
@@ -464,7 +464,7 @@ RegExpNode* RegExpCharacterClass::ToNode(RegExpCompiler* compiler,
     AddUnicodeCaseEquivalents(ranges, zone);
   }
 
-  if (!IsUnicode(compiler->flags()) || compiler->one_byte() ||
+  if (!IsEitherUnicode(compiler->flags()) || compiler->one_byte() ||
       contains_split_surrogate()) {
     return zone->New<TextNode>(this, compiler->read_backward(), on_success);
   }
@@ -770,7 +770,7 @@ void RegExpDisjunction::FixSingleCharacterDisjunctions(
       continue;
     }
     const RegExpFlags flags = compiler->flags();
-    DCHECK_IMPLIES(IsUnicode(flags),
+    DCHECK_IMPLIES(IsEitherUnicode(flags),
                    !unibrow::Utf16::IsLeadSurrogate(atom->data().at(0)));
     bool contains_trail_surrogate =
         unibrow::Utf16::IsTrailSurrogate(atom->data().at(0));
@@ -783,7 +783,7 @@ void RegExpDisjunction::FixSingleCharacterDisjunctions(
       if (!alternative->IsAtom()) break;
       RegExpAtom* const alt_atom = alternative->AsAtom();
       if (alt_atom->length() != 1) break;
-      DCHECK_IMPLIES(IsUnicode(flags),
+      DCHECK_IMPLIES(IsEitherUnicode(flags),
                      !unibrow::Utf16::IsLeadSurrogate(alt_atom->data().at(0)));
       contains_trail_surrogate |=
           unibrow::Utf16::IsTrailSurrogate(alt_atom->data().at(0));
@@ -800,7 +800,7 @@ void RegExpDisjunction::FixSingleCharacterDisjunctions(
         ranges->Add(CharacterRange::Singleton(old_atom->data().at(0)), zone);
       }
       RegExpCharacterClass::CharacterClassFlags character_class_flags;
-      if (IsUnicode(flags) && contains_trail_surrogate) {
+      if (IsEitherUnicode(flags) && contains_trail_surrogate) {
         character_class_flags = RegExpCharacterClass::CONTAINS_SPLIT_SURROGATE;
       }
       alternatives->at(write_posn++) =
@@ -1080,7 +1080,7 @@ class AssertionSequenceRewriter final {
 
     // Bitfield of all seen assertions.
     uint32_t seen_assertions = 0;
-    STATIC_ASSERT(static_cast<int>(RegExpAssertion::Type::LAST_ASSERTION_TYPE) <
+    static_assert(static_cast<int>(RegExpAssertion::Type::LAST_ASSERTION_TYPE) <
                   kUInt32Size * kBitsPerByte);
 
     for (int i = from; i < to; i++) {

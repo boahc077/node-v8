@@ -38,33 +38,30 @@ void StressConcurrentAllocatorTask::RunInternal() {
         kSmallObjectSize, AllocationType::kOld, AllocationOrigin::kRuntime,
         AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kSmallObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kSmallObjectSize);
     } else {
-      local_heap.TryPerformCollection();
+      heap->CollectGarbageFromAnyThread(&local_heap);
     }
 
     result = local_heap.AllocateRaw(kMediumObjectSize, AllocationType::kOld,
                                     AllocationOrigin::kRuntime,
                                     AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kMediumObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kMediumObjectSize);
     } else {
-      local_heap.TryPerformCollection();
+      heap->CollectGarbageFromAnyThread(&local_heap);
     }
 
     result = local_heap.AllocateRaw(kLargeObjectSize, AllocationType::kOld,
                                     AllocationOrigin::kRuntime,
                                     AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kLargeObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kLargeObjectSize);
     } else {
-      local_heap.TryPerformCollection();
+      heap->CollectGarbageFromAnyThread(&local_heap);
     }
     local_heap.Safepoint();
   }
@@ -87,6 +84,11 @@ void ConcurrentAllocator::FreeLinearAllocationArea() {
   if (lab_.IsValid() && space_->identity() == CODE_SPACE) {
     optional_scope.emplace(MemoryChunk::FromAddress(lab_.top()));
   }
+  if (lab_.top() != lab_.limit() &&
+      owning_heap()->incremental_marking()->black_allocation()) {
+    Page::FromAddress(lab_.top())
+        ->DestroyBlackAreaBackground(lab_.top(), lab_.limit());
+  }
   lab_.CloseAndMakeIterable();
 }
 
@@ -105,6 +107,11 @@ void ConcurrentAllocator::MarkLinearAllocationAreaBlack() {
   Address limit = lab_.limit();
 
   if (top != kNullAddress && top != limit) {
+    base::Optional<CodePageHeaderModificationScope> optional_rwx_write_scope;
+    if (space_->identity() == CODE_SPACE) {
+      optional_rwx_write_scope.emplace(
+          "Marking Code objects requires write access to the Code page header");
+    }
     Page::FromAllocationAreaAddress(top)->CreateBlackAreaBackground(top, limit);
   }
 }
@@ -114,58 +121,69 @@ void ConcurrentAllocator::UnmarkLinearAllocationArea() {
   Address limit = lab_.limit();
 
   if (top != kNullAddress && top != limit) {
+    base::Optional<CodePageHeaderModificationScope> optional_rwx_write_scope;
+    if (space_->identity() == CODE_SPACE) {
+      optional_rwx_write_scope.emplace(
+          "Marking Code objects requires write access to the Code page header");
+    }
     Page::FromAllocationAreaAddress(top)->DestroyBlackAreaBackground(top,
                                                                      limit);
   }
 }
 
 AllocationResult ConcurrentAllocator::AllocateInLabSlow(
-    int object_size, AllocationAlignment alignment, AllocationOrigin origin) {
+    int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
   if (!EnsureLab(origin)) {
     return AllocationResult::Failure();
   }
-
-  AllocationResult allocation = lab_.AllocateRawAligned(object_size, alignment);
+  AllocationResult allocation =
+      lab_.AllocateRawAligned(size_in_bytes, alignment);
   DCHECK(!allocation.IsFailure());
-
   return allocation;
 }
 
 bool ConcurrentAllocator::EnsureLab(AllocationOrigin origin) {
-  auto result = space_->RawRefillLabBackground(
-      local_heap_, kLabSize, kMaxLabSize, kTaggedAligned, origin);
+  auto result = space_->RawAllocateBackground(local_heap_, kMinLabSize,
+                                              kMaxLabSize, origin);
   if (!result) return false;
 
-  if (IsBlackAllocationEnabled()) {
-    Address top = result->first;
-    Address limit = top + result->second;
-    Page::FromAllocationAreaAddress(top)->CreateBlackAreaBackground(top, limit);
-  }
+  FreeLinearAllocationArea();
 
   HeapObject object = HeapObject::FromAddress(result->first);
-  LocalAllocationBuffer saved_lab = std::move(lab_);
   lab_ = LocalAllocationBuffer::FromResult(
       space_->heap(), AllocationResult::FromObject(object), result->second);
   DCHECK(lab_.IsValid());
-  if (!lab_.TryMerge(&saved_lab)) {
-    saved_lab.CloseAndMakeIterable();
+
+  if (IsBlackAllocationEnabled()) {
+    Address top = lab_.top();
+    Address limit = lab_.limit();
+    Page::FromAllocationAreaAddress(top)->CreateBlackAreaBackground(top, limit);
   }
+
   return true;
 }
 
 AllocationResult ConcurrentAllocator::AllocateOutsideLab(
-    int object_size, AllocationAlignment alignment, AllocationOrigin origin) {
-  auto result = space_->RawRefillLabBackground(local_heap_, object_size,
-                                               object_size, alignment, origin);
+    int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
+  // Conservative estimate as we don't know the alignment of the allocation.
+  const int requested_filler_size = Heap::GetMaximumFillToAlign(alignment);
+  const int aligned_size_in_bytes = size_in_bytes + requested_filler_size;
+  auto result = space_->RawAllocateBackground(
+      local_heap_, aligned_size_in_bytes, aligned_size_in_bytes, origin);
+
   if (!result) return AllocationResult::Failure();
+  DCHECK_GE(result->second, aligned_size_in_bytes);
 
-  HeapObject object = HeapObject::FromAddress(result->first);
-
+  HeapObject object =
+      (requested_filler_size)
+          ? owning_heap()->AlignWithFiller(
+                HeapObject::FromAddress(result->first), size_in_bytes,
+                static_cast<int>(result->second), alignment)
+          : HeapObject::FromAddress(result->first);
   if (IsBlackAllocationEnabled()) {
     owning_heap()->incremental_marking()->MarkBlackBackground(object,
-                                                              object_size);
+                                                              size_in_bytes);
   }
-
   return AllocationResult::FromObject(object);
 }
 

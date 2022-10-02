@@ -7,7 +7,6 @@
 #include "src/base/small-vector.h"
 #include "src/execution/isolate.h"
 #include "src/objects/string-inl.h"
-#include "src/regexp/property-sequences.h"
 #include "src/regexp/regexp-ast.h"
 #include "src/regexp/regexp-macro-assembler.h"
 #include "src/regexp/regexp.h"
@@ -424,7 +423,7 @@ template <class CharT>
 void RegExpParserImpl<CharT>::Advance() {
   if (has_next()) {
     if (GetCurrentStackPosition() < stack_limit_) {
-      if (FLAG_correctness_fuzzer_suppressions) {
+      if (v8_flags.correctness_fuzzer_suppressions) {
         FATAL("Aborting on stack overflow");
       }
       ReportError(RegExpError::kStackOverflow);
@@ -852,8 +851,8 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
     if (current() == '?') {
       quantifier_type = RegExpQuantifier::NON_GREEDY;
       Advance();
-    } else if (FLAG_regexp_possessive_quantifier && current() == '+') {
-      // FLAG_regexp_possessive_quantifier is a debug-only flag.
+    } else if (v8_flags.regexp_possessive_quantifier && current() == '+') {
+      // v8_flags.regexp_possessive_quantifier is a debug-only flag.
       quantifier_type = RegExpQuantifier::POSSESSIVE;
       Advance();
     }
@@ -910,7 +909,7 @@ RegExpParserState* RegExpParserImpl<CharT>::ParseOpenParenthesis(
     }
   }
   if (subexpr_type == CAPTURE) {
-    if (captures_started_ >= RegExpMacroAssembler::kMaxRegisterCount) {
+    if (captures_started_ >= RegExpMacroAssembler::kMaxCaptures) {
       ReportError(RegExpError::kTooManyCaptures);
       return nullptr;
     }
@@ -1036,7 +1035,7 @@ bool RegExpParserImpl<CharT>::ParseBackReferenceIndex(int* index_out) {
     base::uc32 c = current();
     if (IsDecimalDigit(c)) {
       value = 10 * value + (c - '0');
-      if (value > RegExpMacroAssembler::kMaxRegisterCount) {
+      if (value > RegExpMacroAssembler::kMaxCaptures) {
         Reset(start);
         return false;
       }
@@ -2039,7 +2038,7 @@ bool RegExpParserImpl<CharT>::Parse(RegExpCompileData* result) {
 
   DCHECK_NOT_NULL(tree);
   DCHECK_EQ(error_, RegExpError::kNone);
-  if (FLAG_trace_regexp_parser) {
+  if (v8_flags.trace_regexp_parser) {
     StdoutStream os;
     tree->Print(os, zone());
     os << "\n";
@@ -2230,6 +2229,14 @@ bool RegExpBuilder::NeedsDesugaringForUnicode(RegExpCharacterClass* cc) {
   if (ignore_case()) return true;
   ZoneList<CharacterRange>* ranges = cc->ranges(zone());
   CharacterRange::Canonicalize(ranges);
+
+  if (cc->is_negated()) {
+    ZoneList<CharacterRange>* negated_ranges =
+        zone()->New<ZoneList<CharacterRange>>(ranges->length(), zone());
+    CharacterRange::Negate(ranges, negated_ranges, zone());
+    ranges = negated_ranges;
+  }
+
   for (int i = ranges->length() - 1; i >= 0; i--) {
     base::uc32 from = ranges->at(i).from();
     base::uc32 to = ranges->at(i).to();
@@ -2366,14 +2373,6 @@ template bool RegExpParser::VerifyRegExpSyntax<uint8_t>(
 template bool RegExpParser::VerifyRegExpSyntax<base::uc16>(
     Zone*, uintptr_t, const base::uc16*, int, RegExpFlags, RegExpCompileData*,
     const DisallowGarbageCollection&);
-
-// static
-bool RegExpParser::VerifyRegExpSyntax(Isolate* isolate, Zone* zone,
-                                      Handle<String> input, RegExpFlags flags,
-                                      RegExpCompileData* result,
-                                      const DisallowGarbageCollection&) {
-  return ParseRegExpFromHeapString(isolate, zone, input, flags, result);
-}
 
 #undef LAST
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # Copyright 2012 the V8 project authors. All rights reserved.
@@ -93,6 +93,17 @@ consts_misc = [
 
     { 'name': 'CodeKindFieldMask',      'value': 'Code::KindField::kMask' },
     { 'name': 'CodeKindFieldShift',     'value': 'Code::KindField::kShift' },
+
+    { 'name': 'DeoptimizationDataInlinedFunctionCountIndex',
+  'value': 'DeoptimizationData::kInlinedFunctionCountIndex' },
+    { 'name': 'DeoptimizationDataLiteralArrayIndex',
+  'value': 'DeoptimizationData::kLiteralArrayIndex' },
+    { 'name': 'DeoptimizationDataOptimizationIdIndex',
+  'value': 'DeoptimizationData::kOptimizationIdIndex' },
+    { 'name': 'DeoptimizationDataSharedFunctionInfoIndex',
+  'value': 'DeoptimizationData::kSharedFunctionInfoIndex' },
+    { 'name': 'DeoptimizationDataInliningPositionsIndex',
+  'value': 'DeoptimizationData::kInliningPositionsIndex' },
 
     { 'name': 'CodeKindBytecodeHandler',
       'value': 'static_cast<int>(CodeKind::BYTECODE_HANDLER)' },
@@ -299,6 +310,7 @@ extras_accessors = [
     'Code, flags, uint32_t, kFlagsOffset',
     'Code, instruction_start, uintptr_t, kHeaderSize',
     'Code, instruction_size, int, kInstructionSizeOffset',
+    'Code, deoptimization_data, FixedArray, kDeoptimizationDataOrInterpreterDataOffset',
     'String, length, int32_t, kLengthOffset',
     'DescriptorArray, header_size, uintptr_t, kHeaderSize',
     'ConsString, first, String, kFirstOffset',
@@ -345,6 +357,7 @@ header = '''
 #include "src/objects/data-handler.h"
 #include "src/objects/js-promise.h"
 #include "src/objects/js-regexp-string-iterator.h"
+#include "src/objects/megadom-handler.h"
 
 namespace v8 {
 namespace internal {
